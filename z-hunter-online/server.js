@@ -1,46 +1,53 @@
 const express = require('express');
 const http = require('http');
-const { Server } = require('socket.io');
-const path = require('path');
+const socketIo = require('socket.io');
+
+app.use(express.static(__dirname));
+// ... resto do código (io.on connection, etc)
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = socketIo(server);
 
-// Configuração de arquivos estáticos
-app.use(express.static(path.join(__dirname, '.')));
+app.use(express.static(__dirname));
 
-// Rota principal para garantir que o index.html seja lido
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-let players = {};
+let players = {}; 
 
 io.on('connection', (socket) => {
+    console.log('Novo jogador conectado:', socket.id);
+
+    // Cria o jogador com posição inicial e cor
     players[socket.id] = {
-        x: 400, y: 300, angle: 0,
-        color: `hsl(${Math.random() * 360}, 70%, 50%)`,
-        hp: 100
+        x: 400,
+        y: 400,
+        angle: 0,
+        color: `hsl(${Math.random() * 360}, 70%, 50%)`
     };
+
+    // Envia a lista de todos os jogadores para quem acabou de entrar
     io.emit('updatePlayers', players);
 
+    // Recebe movimento e repassa para os outros
     socket.on('move', (data) => {
         if (players[socket.id]) {
             players[socket.id].x = data.x;
             players[socket.id].y = data.y;
             players[socket.id].angle = data.angle;
-            socket.broadcast.emit('updatePlayers', players);
+            // Transmite a lista atualizada para todos
+            io.emit('updatePlayers', players);
         }
     });
 
     socket.on('disconnect', () => {
+        console.log('Jogador saiu:', socket.id);
         delete players[socket.id];
         io.emit('updatePlayers', players);
     });
 });
 
-// A LINHA MAIS IMPORTANTE PARA O RENDER:
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor rodando na porta ${PORT}`);

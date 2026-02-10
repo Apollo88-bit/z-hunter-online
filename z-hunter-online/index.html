@@ -1,43 +1,11 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Z-Hunter Online</title>
+    <link rel="stylesheet" href="style.css">
     <script src="/socket.io/socket.io.js"></script>
-   <style>
-        body { margin: 0; overflow: hidden; background: #050505; font-family: 'Consolas', monospace; color: #eee; }
-        canvas { display: block; cursor: crosshair; }
-        
-        /* UI de Status */
-        #ui { position: absolute; top: 15px; left: 15px; pointer-events: none; background: rgba(0,0,0,0.8); padding: 15px; border: 1px solid #444; border-radius: 8px; }
-        .bar-bg { width: 200px; height: 12px; background: #222; border-radius: 6px; margin: 5px 0; border: 1px solid #333; }
-        #hp-fill { height: 100%; background: #ff4444; width: 100%; transition: 0.2s; }
-        #mana-fill { height: 100%; background: #4444ff; width: 100%; transition: 0.2s; }
-        
-        /* Slots de Armas */
-        #weapon-slots { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); display: flex; gap: 15px; }
-        .slot { padding: 10px 20px; background: rgba(20,20,20,0.9); border: 2px solid #444; border-radius: 8px; min-width: 120px; text-align: center; }
-        .slot.active { border-color: #ffd700; box-shadow: 0 0 15px rgba(255, 215, 0, 0.4); }
-        .key-hint { font-size: 10px; color: #888; display: block; }
-
-        /* Menu de Upgrades */
-        #upgrade-menu { 
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            background: #111; padding: 25px; border: 3px solid #ffd700;
-            display: none; text-align: center; pointer-events: all; min-width: 400px;
-        }
-        .up-btn { 
-            display: block; width: 100%; margin: 10px 0; padding: 12px; 
-            background: #222; color: #fff; border: 1px solid #555; cursor: pointer;
-        }
-        .up-btn:hover { background: #ffd700; color: #000; }
-
-        /* Boss UI */
-        #boss-ui { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 60%; display: none; text-align: center; }
-        #boss-bar { width: 100%; height: 20px; background: #300; border: 2px solid #f00; }
-        #boss-fill { height: 100%; background: #f00; width: 100%; }
-    </style>
 </head>
 <body>
 
@@ -54,8 +22,16 @@
     </div>
 
     <div id="weapon-slots">
-        <div id="slot-1" class="slot active"><span class="key-hint">SLOT 1 (Físico)</span><span id="w1-name">Pistola</span><br><small id="w1-ammo">15/15</small></div>
-        <div id="slot-2" class="slot"><span class="key-hint">SLOT 2 (Mágico)</span><span id="w2-name">Vazio</span><br><small id="w2-info">---</small></div>
+        <div id="slot-1" class="slot active">
+            <span class="key-hint">SLOT 1 (Físico)</span>
+            <span id="w1-name">Pistola</span><br>
+            <small id="w1-ammo">15/15</small>
+        </div>
+        <div id="slot-2" class="slot">
+            <span class="key-hint">SLOT 2 (Mágico)</span>
+            <span id="w2-name">Vazio</span><br>
+            <small id="w2-info">---</small>
+        </div>
     </div>
 
     <div id="upgrade-menu">
@@ -65,283 +41,6 @@
 
     <canvas id="gameCanvas"></canvas>
 
-<script>
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
-
-// --- CONFIGURAÇÃO GLOBAL ---
-let wave = 1;
-let gameRunning = true;
-let player = { x: 0, y: 0, size: 25, hp: 100, maxHp: 100, mana: 100, maxMana: 100, angle: 0, activeSlot: 1, reloading: false };
-let camera = { x: 0, y: 0 };
-let enemies = [], bullets = [], particles = [];
-let keys = {};
-
-// Atributos de RPG
-let playerStats = {
-    agilidade: 4, forca: 1, precisao: 0.1, sorte: 5, critChance: 5, penetracao: 1, 
-    regenMana: 0.2, stamina: 100, engenharia: 1, medicina: 1, foco: 1
-};
-
-// Banco de Armas
-const WEAPONS = {
-    pistola: { name: "Pistola", type: "fisico", damage: 15, rate: 400, ammo: 15, maxAmmo: 15, range: 600, color: "#fff" },
-    fuzil: { name: "Fuzil", type: "fisico", damage: 25, rate: 150, ammo: 40, maxAmmo: 40, range: 800, color: "#0f0" },
-    espada: { name: "Espada", type: "contato", damage: 45, rate: 500, range: 100, color: "#aaa" },
-    cajado: { name: "Cajado Arcano", type: "magia", damage: 60, rate: 700, manaCost: 20, range: 900, color: "#0cf" },
-    gelo: { name: "Orbe de Gelo", type: "magia", damage: 30, rate: 350, manaCost: 12, range: 500, color: "#4af" }
-};
-
-let inventory = { 1: WEAPONS.pistola, 2: null };
-
-// --- INPUTS ---
-window.addEventListener('mousemove', e => {
-    player.angle = Math.atan2(e.clientY - canvas.height/2, e.clientX - canvas.width/2);
-});
-window.addEventListener('mousedown', () => keys.mouse = true);
-window.addEventListener('mouseup', () => keys.mouse = false);
-window.addEventListener('keydown', e => {
-    keys[e.key.toLowerCase()] = true;
-    if(e.key === 'f' || e.key === 'F') switchWeapon();
-    if(e.key === 'r' || e.key === 'R') reload();
-});
-window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-
-// --- LÓGICA CORE ---
-function switchWeapon() {
-    if(!inventory[2]) return;
-    player.activeSlot = player.activeSlot === 1 ? 2 : 1;
-    document.getElementById('slot-1').className = player.activeSlot === 1 ? 'slot active' : 'slot';
-    document.getElementById('slot-2').className = player.activeSlot === 2 ? 'slot active' : 'slot';
-}
-
-function reload() {
-    let w = inventory[1];
-    if(player.reloading || w.ammo === w.maxAmmo || w.type === "contato") return;
-    player.reloading = true;
-    setTimeout(() => {
-        w.ammo = w.maxAmmo;
-        player.reloading = false;
-    }, 1500);
-}
-
-let lastShot = 0;
-function fire() {
-    let now = Date.now();
-    let w = inventory[player.activeSlot];
-    if(!w || now - lastShot < w.rate || player.reloading) return;
-
-    if(w.type === "fisico") {
-        if(w.ammo <= 0) return;
-        w.ammo--;
-        createBullet(w);
-    } else if(w.type === "magia") {
-        if(player.mana < w.manaCost) return;
-        player.mana -= w.manaCost;
-        createBullet(w);
-    } else if(w.type === "contato") {
-        attackMelee(w);
-    }
-    lastShot = now;
-}
-
-function createBullet(w) {
-    let spread = (Math.random() - 0.5) * playerStats.precisao;
-    let isCrit = (Math.random() * 100 < playerStats.critChance);
-    bullets.push({
-        x: player.x, y: player.y,
-        vx: Math.cos(player.angle + spread) * 15,
-        vy: Math.sin(player.angle + spread) * 15,
-        damage: isCrit ? w.damage * 2 : w.damage,
-        color: isCrit ? "#ff0" : w.color,
-        range: w.range, dist: 0,
-        pen: playerStats.penetracao,
-        magic: w.type === "magia"
-    });
-}
-
-function attackMelee(w) {
-    enemies.forEach(en => {
-        let d = Math.hypot(player.x - en.x, player.y - en.y);
-        if(d < w.range + en.size) {
-            en.hp -= w.damage * playerStats.forca;
-        }
-    });
-    // Visual do corte
-    particles.push({ x: player.x, y: player.y, angle: player.angle, life: 10, color: w.color });
-}
-
-function spawnWave() {
-    enemies = [];
-    bullets = [];
-    let isBoss = (wave % 10 === 0);
-    document.getElementById('wave-display').innerText = "ONDA " + wave;
-    
-    if(isBoss) {
-        document.getElementById('boss-ui').style.display = 'block';
-        enemies.push({ x: player.x+500, y: player.y+500, size: 130, hp: wave*500, maxHp: wave*500, speed: 1.5, color: "#bf00ff", isBoss: true });
-    } else {
-        document.getElementById('boss-ui').style.display = 'none';
-        for(let i=0; i < 5 + wave*3; i++) {
-            let ang = Math.random() * Math.PI*2;
-            enemies.push({ x: player.x + Math.cos(ang)*900, y: player.y + Math.sin(ang)*900, size: 20, hp: 20 + wave*10, maxHp: 20 + wave*10, speed: 2 + Math.random(), color: "#3f3", isBoss: false });
-        }
-    }
-}
-
-function update() {
-    if(!gameRunning) return;
-
-    // Movimento
-    if(keys.w) player.y -= playerStats.agilidade;
-    if(keys.s) player.y += playerStats.agilidade;
-    if(keys.a) player.x -= playerStats.agilidade;
-    if(keys.d) player.x += playerStats.agilidade;
-
-    if(keys.mouse || keys[' ']) fire();
-
-    // Mana & HP
-    if(player.mana < player.maxMana) player.mana += playerStats.regenMana;
-    
-    // Câmera
-    camera.x = -player.x + canvas.width/2;
-    camera.y = -player.y + canvas.height/2;
-
-    // Balas
-    bullets.forEach((b, i) => {
-        b.x += b.vx; b.y += b.vy; b.dist += 15;
-        if(b.dist > b.range) bullets.splice(i, 1);
-    });
-
-    // Inimigos
-    enemies.forEach((en, ei) => {
-        let ang = Math.atan2(player.y - en.y, player.x - en.x);
-        en.x += Math.cos(ang) * en.speed;
-        en.y += Math.sin(ang) * en.speed;
-
-        // Colisão com Bala
-        bullets.forEach((b, bi) => {
-            if(Math.hypot(b.x - en.x, b.y - en.y) < en.size) {
-                en.hp -= b.damage;
-                b.pen--;
-                if(b.pen <= 0) bullets.splice(bi, 1);
-            }
-        });
-
-        // Dano no Player
-        if(Math.hypot(player.x - en.x, player.y - en.y) < en.size + 15) {
-            player.hp -= 0.5;
-            if(player.hp <= 0) location.reload();
-        }
-
-        if(en.hp <= 0) enemies.splice(ei, 1);
-    });
-
-    // UI
-    document.getElementById('hp-fill').style.width = (player.hp/player.maxHp)*100 + "%";
-    document.getElementById('mana-fill').style.width = (player.mana/player.maxMana)*100 + "%";
-    document.getElementById('w1-ammo').innerText = player.reloading ? "LIMPANDO..." : `${inventory[1].ammo}/${inventory[1].maxAmmo}`;
-    document.getElementById('w2-info').innerText = inventory[2] ? "Usa Mana" : "Vazio";
-    document.getElementById('w2-name').innerText = inventory[2] ? inventory[2].name : "---";
-    if(enemies.length > 0 && enemies[0].isBoss) {
-        document.getElementById('boss-fill').style.width = (enemies[0].hp/enemies[0].maxHp)*100 + "%";
-    }
-
-    if(enemies.length === 0) startUpgrade();
-}
-
-function draw() {
-    ctx.fillStyle = "#050505";
-    ctx.fillRect(0,0,canvas.width, canvas.height);
-
-    ctx.save();
-    ctx.translate(camera.x, camera.y);
-
-    // Grid
-    ctx.strokeStyle = "#111";
-    for(let i=-2000; i<2000; i+=100) {
-        ctx.beginPath(); ctx.moveTo(i, -2000); ctx.lineTo(i, 2000); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(-2000, i); ctx.lineTo(2000, i); ctx.stroke();
-    }
-
-    // Player
-    ctx.save();
-    ctx.translate(player.x, player.y);
-    ctx.rotate(player.angle);
-    ctx.fillStyle = player.activeSlot === 1 ? "#0f0" : "#44f";
-    ctx.fillRect(-15, -15, 30, 30);
-    ctx.fillStyle = "#fff"; ctx.fillRect(12, -4, 15, 8); // Arma
-    ctx.restore();
-
-    // Inimigos
-    enemies.forEach(en => {
-        ctx.fillStyle = en.color;
-        if(en.isBoss) {
-            ctx.shadowBlur = 20; ctx.shadowColor = "#f0f";
-        }
-        ctx.beginPath(); ctx.arc(en.x, en.y, en.size, 0, Math.PI*2); ctx.fill();
-        ctx.shadowBlur = 0;
-    });
-
-    // Balas
-    bullets.forEach(b => {
-        ctx.fillStyle = b.color;
-        ctx.fillRect(b.x-2, b.y-2, 5, 5);
-    });
-
-    // Partículas de Corte
-    particles.forEach((p, i) => {
-        ctx.strokeStyle = p.color; ctx.lineWidth = 4;
-        ctx.beginPath(); ctx.arc(p.x, p.y, 80, p.angle-1, p.angle+1); ctx.stroke();
-        p.life--; if(p.life <= 0) particles.splice(i, 1);
-    });
-
-    ctx.restore();
-}
-
-function startUpgrade() {
-    gameRunning = false;
-    const opt = document.getElementById('upgrade-options');
-    opt.innerHTML = '';
-    
-    let pool = [
-        { n: "Fuzil de Elite (Slot 1)", t: "w1", d: WEAPONS.fuzil },
-        { n: "Espada Pesada (Slot 1)", t: "w1", d: WEAPONS.espada },
-        { n: "Cajado Arcano (Slot 2)", t: "w2", d: WEAPONS.cajado },
-        { n: "Orbe de Gelo (Slot 2)", t: "w2", d: WEAPONS.gelo },
-        { n: "Mais Agilidade (Raro)", t: "s", s: "agilidade", v: 1 },
-        { n: "Mais Mana (Raro)", t: "s", s: "maxMana", v: 50 },
-        { n: "Dano Crítico (Épico)", t: "s", s: "critChance", v: 10 }
-    ];
-
-    pool.sort(() => 0.5 - Math.random()).slice(0, 3).forEach(up => {
-        let b = document.createElement('button');
-        b.className = 'up-btn';
-        b.innerText = up.n;
-        b.onclick = () => {
-            if(up.t === 'w1') inventory[1] = up.d;
-            if(up.t === 'w2') { inventory[2] = up.d; player.activeSlot = 2; switchWeapon(); }
-            if(up.t === 's') { playerStats[up.s] += up.v; if(up.s === 'maxMana') player.mana = player.maxMana; }
-            wave++; gameRunning = true; spawnWave(); loop();
-            document.getElementById('upgrade-menu').style.display = 'none';
-        };
-        opt.appendChild(b);
-    });
-    document.getElementById('upgrade-menu').style.display = 'block';
-}
-
-function loop() {
-    update();
-    draw();
-    if(gameRunning) requestAnimationFrame(loop);
-}
-
-spawnWave();
-loop();
-</script>
-</body>
-</html>
+    <script src="script.js"></script>
 </body>
 </html>
