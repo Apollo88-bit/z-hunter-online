@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Z-Hunter Online</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background: #000; color: white; font-family: sans-serif; }
+        canvas { display: block; }
+        #gui { position: absolute; top: 10px; left: 10px; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div id="gui">
+        <div id="status">Conectando...</div>
+    </div>
+    <canvas id="gameCanvas"></canvas>
+
+<script>
+const socket = io();
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let myId = null;
+let players = {};
+let bullets = [];
+let keys = {};
+
+socket.on('connect', () => { 
+    myId = socket.id; 
+    document.getElementById('status').innerText = "ONLINE";
+});
+
+socket.on('updatePlayers', (data) => { players = data; });
+socket.on('newBullet', (b) => { bullets.push(b); });
+
+window.onkeydown = e => keys[e.key.toLowerCase()] = true;
+window.onkeyup = e => keys[e.key.toLowerCase()] = false;
+
+function fire() {
+    let me = players[myId];
+    let b = { x: me.x, y: me.y, angle: me.angle, dist: 0, color: me.color };
+    bullets.push(b);
+    socket.emit('shoot', b);
+}
+
+let mouseX = 0, mouseY = 0;
+window.onmousemove = e => {
+    mouseX = e.clientX;
+    mouseY = e.clientY;
+};
+
+function update() {
+    if(!players[myId]) return;
+    let me = players[myId];
+    let moved = false;
+
+    if(keys.w) { me.y -= 4; moved = true; }
+    if(keys.s) { me.y += 4; moved = true; }
+    if(keys.a) { me.x -= 4; moved = true; }
+    if(keys.d) { me.x += 4; moved = true; }
+    
+    me.angle = Math.atan2(mouseY - canvas.height/2, mouseX - canvas.width/2);
+
+    if(moved || keys[' ']) {
+        socket.emit('move', { x: me.x, y: me.y, angle: me.angle });
+        if(keys[' ']) fire();
+    }
+
+    bullets.forEach((b, i) => {
+        b.x += Math.cos(b.angle) * 10;
+        b.y += Math.sin(b.angle) * 10;
+        b.dist += 10;
+        if(b.dist > 800) bullets.splice(i, 1);
+    });
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if(!players[myId]) return;
+
+    ctx.save();
+    ctx.translate(-players[myId].x + canvas.width/2, -players[myId].y + canvas.height/2);
+
+    for(let id in players) {
+        let p = players[id];
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.angle);
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-15, -15, 30, 30);
+        ctx.fillStyle = "white"; ctx.fillRect(10, -3, 10, 6);
+        ctx.restore();
+    }
+
+    bullets.forEach(b => {
+        ctx.fillStyle = b.color;
+        ctx.beginPath(); ctx.arc(b.x, b.y, 4, 0, Math.PI*2); ctx.fill();
+    });
+
+    ctx.restore();
+}
+
+function loop() { update(); draw(); requestAnimationFrame(loop); }
+loop();
+</script>
+</body>
+</html>
